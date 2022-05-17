@@ -30,8 +30,32 @@ class Pdfparse
         $this->parsedSource = [];
         $this->_parse($pdfFile);
     }
-
-    public function _parse($pdfFile)
+    public function findText($textFind, $caseSensitive = false) {
+        if (!is_array($textFind)) {
+            $textFind = array($textFind);
+        }
+        $html = new DOMDocument();
+        $Arr = array('page' => array(), 'content' => array());
+        for ($page = 1;$page < sizeof($this->parsedSource)+1;$page++) {
+            $html->loadHTML($this->parsedSource[$page-1]);
+            $pg = $html->getElementById('background');
+            if (!array_key_exists('page' . $page, $Arr['page'])) $Arr['page']['page' . $page] = array('width' => $pg->getAttribute('width'), 'height' => $pg->getAttribute('height'));
+            foreach ($textFind as $tFind) {
+                foreach ($html->getElementsByTagName('div') as $span) {
+                    if (stripos($caseSensitive ? $span->textContent : strtolower($span->textContent), $caseSensitive ? $tFind : strtolower($tFind)) !== false) {
+                        $data = explode(';', $span->getAttribute('style'));
+                        $x = $this->_extractNumber($data[1]);
+                        $y = $this->_extractNumber($data[2]);
+                        $t = $this->_carikata($span->textContent, $tFind, $caseSensitive);
+                        if (!array_key_exists($tFind, $Arr['content'])) $Arr['content'][$tFind] = array();
+                        array_push($Arr['content'][$tFind], array('text' => $t, 'x' => $x, 'y' => $y, 'page' => $page));
+                    }
+                }
+            }
+        }
+        return $Arr;
+    }
+    private function _parse($pdfFile)
     {
         //check is pdf file
         if ($this->_getExtension($pdfFile) != 'pdf') {
@@ -56,6 +80,20 @@ class Pdfparse
             array_push($this->parsedSource, $content);
         }
         $this->_delDirRecursive($this->_tempDir());
+    }
+    
+    private function _extractNumber($str) {
+        $matches=[];
+        preg_match_all('!\d+!', $str, $matches);
+        return ($matches[0][0]);
+    }
+    private function _carikata($kalimat, $findKata, $caseSensitive = false) {
+        //return kata yang dicari dari kalimat
+        foreach (explode(' ', $kalimat) as $kata) {
+            if (stripos($caseSensitive ? $kata : strtolower($kata), $caseSensitive ? $findKata : strtolower($findKata)) !== false) {
+                return $kata;
+            }
+        }
     }
     private function _maxPage($fileIndexConverted)
     {
@@ -125,7 +163,7 @@ class Pdfparse
     }
     private function _tempDir()
     {
-        $path = $this->_safePath($this->_binDir() . '/tmp/' . $this->tmpHash);
+        $path = $this->_safePath($this->_binDir() . '/tmp/.' . $this->tmpHash);
         if (!is_dir($path)) {
             mkdir($path, 0777, true);
         }
@@ -137,7 +175,7 @@ class Pdfparse
             $objects = scandir($dir);
             foreach ($objects as $object) {
                 if ($object != "." && $object != "..") {
-                    $path = $this->_safePath('$dir/$object');
+                    $path = $this->_safePath($dir . '/' . $object);
                     if (is_dir($path) && !is_link($path)) $this->_delDirRecursive($path);
                     else unlink($path);
                 }
